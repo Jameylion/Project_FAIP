@@ -9,8 +9,9 @@ from highway_env.vehicle.kinematics import Performance, Logger
 
 
 #situation = "intersection-v1"
-situation = "complex_city-v1"
+# situation = "complex_city-v1"
 #situation = "racetrack-v0"
+situation = "merge_in-v1"
 
 
 frameSize = (1280,560)
@@ -64,17 +65,17 @@ model = TRPO("MlpPolicy", env,
              verbose=1,
              tensorboard_log="highway_TRPO/",
              seed=None,
-             device='cuda',
+             device='cpu',
              _init_setup_model=True)
 
 
 # uncomment the lines below if you want to train a new model
 
-#model = TRPO.load(situation+'_trpo/fixed_test')
+# model = TRPO.load(situation+'_trpo/fixed_test')
 
 
 model.set_env(env)
-#model.set_parameters(params)#, exact_match=True)
+# model.set_parameters(params)#, exact_match=True)
 
 print('learning....')
 model.learn(int(100000),progress_bar=True)
