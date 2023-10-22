@@ -13,3 +13,7 @@ highway_env/envs/__pycache__/roundabout_env.cpython-38.pyc
 highway_env/road/__pycache__/road.cpython-38.pyc
 highway_env/road/__pycache__/lane.cpython-38.pyc
 highway_env/vehicle/__pycache__/kinematics.cpython-38.pyc
+videomerge_in-v2.avi
+videomerge_in-v1.avi
+videocomplex_city-v1.avi
+*.avi
