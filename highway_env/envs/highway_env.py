@@ -1,7 +1,8 @@
 from typing import Dict, Text
 
 import numpy as np
-from gym.envs.registration import register
+import gymnasium as gym
+from gymnasium.envs.registration import register
 
 from highway_env import utils
 from highway_env.envs.common.abstract import AbstractEnv

@@ -1,5 +1,5 @@
 import cv2
-import gym
+import gymnasium as gym
 import highway_env
 from stable_baselines3 import PPO
 from sb3_contrib import TRPO
@@ -9,9 +9,9 @@ from highway_env.vehicle.kinematics import Performance, Logger
 
 
 #situation = "intersection-v1"
-# situation = "complex_city-v1"
+# situation = "complex_city-v2"
 #situation = "racetrack-v0"
-situation = "merge_in-v1"
+situation = "merge-v2" 
 
 
 frameSize = (1280,560)
@@ -74,13 +74,13 @@ model = TRPO("MlpPolicy", env,
 # model = TRPO.load(situation+'_trpo/fixed_test')
 
 
-model.set_env(env)
+# model.set_env(env)
 # model.set_parameters(params)#, exact_match=True)
 
 print('learning....')
 model.learn(int(100000),progress_bar=True)
 print('done!')
-name = '_trpo/fixed_testtolga4small'
+name = '_trpo/baseline'
 model.save(situation+name)
 
 print()
@@ -90,7 +90,7 @@ print()
 
 
 ########## Load and test saved model##############
-#model = TRPO.load('situation'+'_trpo/model14.5')
+# model = TRPO.load(situation +'_trpo/fixed_testtolga4small')
 #while True:
 
 

@@ -8,7 +8,7 @@ from gymnasium.envs.registration import register
 def register_highway_envs():
     """Import the envs module so that envs register themselves."""
 
-    register(
+register(
     id='merge_in-v0',
     entry_point='highway_env.envs:MergeInEnv',
 )
@@ -26,4 +26,24 @@ register(
 register(
     id='merge_in-v3',
     entry_point='highway_env.envs:DiscreteMergeInEnvReward1',
+)
+
+register(
+    id='merge-v0',
+    entry_point='highway_env.envs:MergeEnv',
+)
+
+register(
+    id='merge-v1',
+    entry_point='highway_env.envs:MergeEnvReward2',
+)
+
+register(
+    id='merge-v2',
+    entry_point='highway_env.envs:DiscreteMergeEnvReward2',
+)
+
+register(
+    id='merge-v3',
+    entry_point='highway_env.envs:DiscreteMergeEnvReward1',
 )

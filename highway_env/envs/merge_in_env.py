@@ -1,7 +1,8 @@
 from typing import Dict, Text
 
 import numpy as np
-from gym.envs.registration import register
+from gymnasium.envs.registration import register
+from gymnasium import spaces
 
 from highway_env import utils
 from highway_env.envs.common.abstract import AbstractEnv
@@ -25,6 +26,9 @@ class MergeInEnv(AbstractEnv):
     def default_config(cls) -> dict:
         cfg = super().default_config()
         cfg.update({
+            "action": {
+                "type": "DiscreteAction"
+            },
             "collision_reward": -1,
             # "right_lane_reward": 0.1,
             "high_speed_reward": 0.2,
@@ -32,6 +36,7 @@ class MergeInEnv(AbstractEnv):
             "lane_change_reward": -0.05,
         })
         return cfg
+    
 
     def _reward(self, action: int) -> float:
         """
@@ -51,14 +56,24 @@ class MergeInEnv(AbstractEnv):
     def _rewards(self, action: int) -> Dict[Text, float]:
         return {
             "collision_reward": self.vehicle.crashed,
-            # "right_lane_reward": self.vehicle.lane_index[2] / 1,
-            "high_speed_reward": self.vehicle.speed / (self.vehicle.target_speeds.size - 1),
+            "right_lane_reward":self._right_lane_reward(),
+            "high_speed_reward": self.vehicle.speed / 40,
             "lane_change_reward": action in [0, 2],
             "merging_reward": self._calculate_merging_reward(),
         }
+    
+    def _right_lane_reward(self):
+        if self.vehicle.position[0] <= 300 and self.vehicle.lane_index[2] == 0:
+            return 0.1
+        elif self.vehicle.position[0] > 300 and self.vehicle.lane_index[2] == 2:
+            return 0.1
+        else:
+            return -0.05
+            
+
 
     def _calculate_merging_reward(self) -> float:
-        merging_lane = ("j", "k", 0)  # Define the merging lane
+        merging_lane = ("a", "b", 2)  # Define the lane where the car merges into
         merging_vehicle_speeds = [
             vehicle.speed for vehicle in self.road.vehicles if vehicle.lane_index == merging_lane
         ]
@@ -69,7 +84,7 @@ class MergeInEnv(AbstractEnv):
             merging_reward = 1 - (self.vehicle.speed / average_merging_speed)
             # Clamp the reward to a reasonable range
             merging_reward = np.clip(merging_reward, -1, 1)
-        else:
+        elif self.vehicle.position[0] > 310:
             # No merging vehicles, assign a positive reward for staying in the merging lane
             merging_reward = 0.1
 
@@ -77,7 +92,7 @@ class MergeInEnv(AbstractEnv):
     
     def _is_terminated(self) -> bool:
         """The episode is over when a collision occurs or when the access ramp has been passed."""
-        return self.vehicle.crashed or bool(self.vehicle.position[0] > 370)
+        return self.vehicle.crashed or bool(self.vehicle.position[0] > 400)
 
     def _is_truncated(self) -> bool:
         return False
@@ -95,28 +110,38 @@ class MergeInEnv(AbstractEnv):
         net = RoadNetwork()
 
         # Highway lanes
-        ends = [150, 80, 80, 150]  # Before, converging, merge, after
+        ends = [150, 80, 60,20 , 150]  # Before, converging, merge,conv merge, after
         c, s, n = LineType.CONTINUOUS_LINE, LineType.STRIPED, LineType.NONE
         y = [0, StraightLane.DEFAULT_WIDTH,2*StraightLane.DEFAULT_WIDTH]
         line_type = [[c, s],[n, s], [n, c]]
-        line_type_merge = [[c, s],[n, s], [n, s]]
+        line_type_merge = [[c, s],[n, s], [n, n]]
+        
         for i in range(3):
             net.add_lane("a", "b", StraightLane([0, y[i]], [sum(ends[:2]), y[i]], line_types=line_type[i]))
-            net.add_lane("b", "c", StraightLane([sum(ends[:2]), y[i]], [sum(ends[:3]), y[i]], line_types=line_type_merge[i]))
-            net.add_lane("c", "d", StraightLane([sum(ends[:3]), y[i]], [sum(ends), y[i]], line_types=line_type[i]))
+            net.add_lane("b", "c", StraightLane([sum(ends[:2]), y[i]], [sum(ends[:4]), y[i]], line_types=line_type_merge[i]))
+            net.add_lane("c", "d", StraightLane([sum(ends[:4]), y[i]], [sum(ends), y[i]], line_types=line_type[i],forbidden=False))
 
         # Merging lane
         amplitude = 3.25
-        ljk = StraightLane([0, 6.5 + 4 + 4+ 4], [ends[0], 6.5 + 4 + 4+ 4], line_types=[c, c], forbidden=True)
+        amplitude2 = 6.25
+        ljk = StraightLane([0, 6.5 + 4 + 4+ 4], [ends[0], 6.5 + 4 + 4+ 4], line_types=[c, c], forbidden=False)
         lkb = SineLane(ljk.position(ends[0], -amplitude), ljk.position(sum(ends[:2]), -amplitude),
-                       amplitude, 2 * np.pi / (2*ends[1]), np.pi / 2, line_types=[c, c], forbidden=True)
-        lbc = StraightLane(lkb.position(ends[1], 0), lkb.position(ends[1], 0) + [ends[2], 0],
-                           line_types=[n, c])
+                       amplitude, 2 * np.pi / (2*ends[1]), np.pi / 2, line_types=[c, c], forbidden=False)
+        # lbc = StraightLane(lkb.position(ends[1], 0), lkb.position(ends[1], 0) + [ends[2], 0],
+        #                    line_types=[n, c],forbidden=False)
+        lbm = StraightLane(lkb.position(ends[1], 0), lkb.position(ends[1]+ends[2], -amplitude2), line_types=[s, c],forbidden=False)
+        lmc = SineLane(lbm.position(ends[2], -amplitude2), lbm.position(ends[2]+ends[3], -amplitude2),
+                        amplitude2,  2*np.pi / (2 * ends[2]), np.pi / 2, line_types=[n, c], forbidden=False)
+        
+        # print(f'lbm begin =  {lkb.position(ends[1], 0)}')
+        # print(f'lbm eind =  {lkb.position(ends[1]+ends[2], 0)}')
         net.add_lane("j", "k", ljk)
         net.add_lane("k", "b", lkb)
-        net.add_lane("b", "c", lbc)
+        net.add_lane("b", "m", lbm)
+        net.add_lane("m", "c", lmc)
         road = Road(network=net, np_random=self.np_random, record_history=self.config["show_trajectories"])
-        road.objects.append(Obstacle(road, lbc.position(ends[2], 0)))
+        # road.objects.append(Obstacle(road, lmc.position(ends[2] +30, 0)))
+        # print(net.get_lane(("j","k",0)))
         self.road = road
 
     def _make_vehicles(self, speed_factor: int =1) -> None:
@@ -135,13 +160,15 @@ class MergeInEnv(AbstractEnv):
         road.vehicles.append(other_vehicles_type(road, road.network.get_lane(("a", "b", 0)).position(90, 0), speed=29))
         road.vehicles.append(other_vehicles_type(road, road.network.get_lane(("a", "b", 1)).position(70, 0), speed=31))
         road.vehicles.append(other_vehicles_type(road, road.network.get_lane(("a", "b", 0)).position(5, 0), speed=31.5))
+        road.vehicles.append(other_vehicles_type(road, road.network.get_lane(("a", "b", 1)).position(90, 0), speed=31.5))
+        road.vehicles.append(other_vehicles_type(road, road.network.get_lane(("a", "b", 2)).position(110, 0), speed=20))
 
         # merging_v = other_vehicles_type(road, road.network.get_lane(("j", "k", 0)).position(110, 0), speed=20)
        
         # merging_v.target_speed = 30
         # road.vehicles.append(merging_v)
         self.vehicle = ego_vehicle
-        self.merger = self.vehicle 
+        # self.merger = self.vehicle 
 
 class MergeInEnvReward2(MergeInEnv):
     def _rewards(self, action: int) -> Dict[Text, float]:
@@ -151,7 +178,7 @@ class MergeInEnvReward2(MergeInEnv):
         }
 
     def _calculate_merging_reward(self) -> float:
-        merging_lane = ("j", "k", 0)  # Define the merging lane
+        merging_lane = ("a", "b", 2)  # Define the merging lane
         merging_vehicle_speeds = [
             vehicle.speed for vehicle in self.road.vehicles if vehicle.lane_index == merging_lane
         ]
@@ -199,13 +226,36 @@ class DiscreteMergeInEnvReward2(MergeInEnv):
                 "actions_per_axis": (3, 5)
             },
         })
+        
         return config
+    
+    def __init__(self, config=None):
+        super().__init__(config)
+        self.action_space = spaces.Discrete(15)  # Total 15 discrete actions (3 longitudinal actions × 5 lateral actions)
+
     def _rewards(self, action: int) -> float:
         return 0
     
     def _reward(self, action: int) -> float:
         reward = 0
         
+        merging_lane = ("a", "b", 2)  # Define the lane where to merge
+        merging_vehicle_speeds = [
+            vehicle.speed for vehicle in self.road.vehicles if vehicle.lane_index == merging_lane
+        ]
+
+        # Calculate the merging reward based on the speed of merging vehicles
+        if merging_vehicle_speeds:
+            average_merging_speed = sum(merging_vehicle_speeds) / len(merging_vehicle_speeds)
+            reward += 1 - (self.vehicle.speed / average_merging_speed)
+            # Clamp the reward to a reasonable range
+            reward += np.clip(reward, -1, 1)
+            reward *= 20
+        else:
+            # No merging vehicles, assign a positive reward for staying in the merging lane
+            reward += 2
+
+     
         #punishment for driving on the left lane
         # lane = self.vehicle.target_lane_index[2] if isinstance(self.vehicle, ControlledVehicle) \
         #     else self.vehicle.lane_index[2]
@@ -219,13 +269,14 @@ class DiscreteMergeInEnvReward2(MergeInEnv):
             reward += np.cos(anglediff)*self.vehicle.speed/max(1,abs(self.vehicle.lane_distance))
             
         #punishment for distance to the lane
+        # print(f'self. lane = {self.vehicle.lane_index[2]}')
         #reward += 30/abs(self.vehicle.lane_distance)
-        if self.vehicle.lane_index[2] < 3:
+        if self.vehicle.lane_index[2] == 0 and self.vehicle.position[0] < 150:
             reward *= self.vehicle.lane_index[2]
         else:
             reward *= 0.5
-        if self.merger.crashed:
-            return -10
+        # if self.vehicle.crashed:
+        #     return -10
         #print(self.vehicle.lane_index)
         #scaling
         reward = reward/20
@@ -234,9 +285,11 @@ class DiscreteMergeInEnvReward2(MergeInEnv):
         if self.vehicle.crashed:
             return -10
         
+        
+        
         return reward
 
-class DiscreteMergeEnvReward1(MergeInEnv):
+class DiscreteMergeInEnvReward1(MergeInEnv):
     @classmethod
     def default_config(cls) -> dict:
         config = super().default_config()
@@ -252,24 +305,87 @@ class DiscreteMergeEnvReward1(MergeInEnv):
                 "actions_per_axis": (3, 5)
             },
         })
+        
         return config
+    
+    def __init__(self, config=None):
+        super().__init__(config)
+        self.action_space = spaces.Discrete(15)  # Total 15 discrete actions (3 longitudinal actions × 5 lateral actions)
 
-register(
-    id='merge_in-v0',
-    entry_point='highway_env.envs:MergeInEnv',
-)
+    def _rewards(self, action: int) -> float:
+        return 0
+    
+    def _reward(self, action: int) -> float:
+        reward = 0
+        
+        merging_lane = ("a", "b", 2)  # Define the lane where to merge
+        merging_vehicle_speeds = [
+            vehicle.speed for vehicle in self.road.vehicles if vehicle.lane_index == merging_lane
+        ]
 
-register(
-    id='merge_in-v1',
-    entry_point='highway_env.envs:MergeInEnvReward2',
-)
+        # Calculate the merging reward based on the speed of merging vehicles
+        if merging_vehicle_speeds:
+            average_merging_speed = sum(merging_vehicle_speeds) / len(merging_vehicle_speeds)
+            reward += 1 - (self.vehicle.speed / average_merging_speed)
+            # Clamp the reward to a reasonable range
+            reward += np.clip(reward, -1, 1)
+            reward *= 20
 
-register(
-    id='merge_in-v2',
-    entry_point='highway_env.envs:DiscreteMergeInEnvReward2',
-)
 
-register(
-    id='merge_in-v3',
-    entry_point='highway_env.envs:DiscreteMergeInEnvReward1',
-)
+        if self.vehicle.position[0] <= 300 and self.vehicle.lane_index[2] == 0:
+            reward *= 2
+        elif self.vehicle.position[0] > 300 and self.vehicle.lane_index[2] == 2:
+            reward *= 2
+        else:
+            reward /= 2
+        #punishment for driving on the left lane
+        # lane = self.vehicle.target_lane_index[2] if isinstance(self.vehicle, ControlledVehicle) \
+        #     else self.vehicle.lane_index[2]
+        # reward -= lane
+        #
+        #take the difference in radians of the heading of the car and the heading of the road
+        anglediff = min(abs(self.vehicle.heading-self.vehicle.lane.lane_heading(self.vehicle.position)),abs(self.vehicle.lane.lane_heading(self.vehicle.position))+abs(self.vehicle.heading))
+
+        #effective speed
+        if self.vehicle.speed > 0:
+            reward += np.cos(anglediff)*self.vehicle.speed/max(1,abs(self.vehicle.lane_distance))
+            
+        #punishment for distance to the lane
+        # print(f'self. lane = {self.vehicle.lane_index[2]}')
+        #reward += 30/abs(self.vehicle.lane_distance)
+        if self.vehicle.lane_index[2] == 0 and self.vehicle.position[0] < 150:
+            reward *= self.vehicle.lane_index[2]
+        else:
+            reward *= 0.5
+        # if self.vehicle.crashed:
+        #     return -10
+        #print(self.vehicle.lane_index)
+        #scaling
+        reward = reward/20
+        
+        #crash punishment
+        if self.vehicle.crashed:
+            return -10
+        
+        
+        
+        return reward
+# register(
+#     id='merge_in-v0',
+#     entry_point='highway_env.envs:MergeInEnv',
+# )
+
+# register(
+#     id='merge_in-v1',
+#     entry_point='highway_env.envs:MergeInEnvReward2',
+# )
+
+# register(
+#     id='merge_in-v2',
+#     entry_point='highway_env.envs:DiscreteMergeInEnvReward2',
+# )
+
+# register(
+#     id='merge_in-v3',
+#     entry_point='highway_env.envs:DiscreteMergeInEnvReward1',
+# )
